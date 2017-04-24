@@ -37,7 +37,7 @@ lapply(packages, require, character.only = TRUE)
 
 Load data, "fevi8" is a 3d array with longitude, latitude, and time as dimensions. 
 ```{r}
-load("fevi8.Rdata")
+load("Rdata/fevi8.Rdata")
 dim(fevi8)
 ```
 
@@ -58,9 +58,31 @@ Assuming additive seasonality and trends, use stl (loess) to separate trend, sea
 seasonality <- stl(originalts, s.window = "per")$time.series[,"seasonal"]
 plot(stl(originalts, s.window = "per"))
 #spec.ar(seasonality)
+le = 636 # the length of time series
+tl = 1:le
 ```
-Check seasonality and the ability of using a harmonic model to reduce seasonality. 
 
+##### remove seasonality and detect change in trend
+```{r}
+trend_rmstlsea <- originalts - seasonality
+```
+
+Use the empirical fluctuation test to test structural change in trend. The red lines indicate threshold of a change. 
+
+```{r}
+efp_trend <- efp(trend_rmstlsea ~ tl, type = "OLS-MOSUM")
+plot(efp_trend)
+sctest(efp_trend)
+```
+
+##### remove trend and detect change in seasonality
+```{r}
+seasonality <- originalts -  fitted(lm(trend_rmstlsea ~ tl)) 
+plot(seasonality)
+```
+
+remove trend:
+seasonality = originalts - trend
 Form harmonic terms. 
  
 $x_t = Acos(2\pi wt + \phi)$
@@ -69,8 +91,6 @@ $x_t = U_1 cos(2\pi wt) + U_2 sin(2\pi wt)$
 
 ($cos(\alpha + \beta) = cos(\alpha)cos(\beta) - sin (\alpha)sin(\beta)$)
 ```{r harmonic model}
-le = 636 # the length of time series
-tl = 1:le
 w = 1 / 46
 #harmonic
 co <- cos(2 * pi * tl * w)
@@ -86,59 +106,42 @@ Fit a first order harmonic model to the seasonality and model the seasonality in
 ```{r}
 res_har1 <- residuals(lm(seasonality ~ co + si ))
 summary(lm(seasonality ~ co + si))
-res_har1 <- ts(res_har1, start=c(2000, 1), frequency=46)
-sea_har1 <- stl(res_har1, s.window = "per")$time.series[,"seasonal"]
-plot(stl(res_har1, s.window = "per"))
-#spec.ar(sea_har1)
+ 
+#res_har1 <- ts(res_har1, start=c(2000, 1), frequency=46)
+#sea_har1 <- stl(res_har1, s.window = "per")$time.series[,"seasonal"]
+#plot(stl(res_har1, s.window = "per"))
+#spec.ar(res_har1)
 ```
 
-Fit a second order harmonic model to the seasonality and model the seasonality in residuals. As the second order of harmonics does not explain more variance, we will stick to the first order harmonics.
+Fit a second order harmonic model to the seasonality and model the seasonality in residuals. 
 
 ```{r}
 res_har2 <- residuals(lm(seasonality ~ co + si +co2 + si2))
 summary(lm(seasonality ~ co + si + co2 + si2))
-res_har2 <- ts(res_har2, start=c(2000, 1), frequency = 46)
-sea_har2 <- stl(res_har2, s.window = "per")$time.series[,"seasonal"]
-plot(stl(res_har2, s.window = "per"))
+
+#res_har2 <- ts(res_har2, start=c(2000, 1), frequency = 46)
+#sea_har2 <- stl(res_har2, s.window = "per")$time.series[,"seasonal"]
+#plot(stl(res_har2, s.window = "per"))
 #spec.ar(res_har2)
 ```
+
+As the third order of harmonics explain more variance, we will use the third order harmonics.
 ```{r}
-#res_har3 <- residuals(lm(seasonality ~ co + si +co2 + si2 + co3 + si3))
+res_har3 <- residuals(lm(seasonality ~ co + si +co2 + si2 + co3 + si3))
+summary(lm(seasonality ~ co + si +co2 + si2 + co3 + si3))
 #res_har3 <- ts(res_har3, start=c(2000, 1), frequency=46)
 #sea_har3<- stl(res_har3, s.window = "per")$time.series[,"seasonal"]
 #plot(stl(res_har3, s.window = "per"))
 #spec.ar(sea_har3)
 ```
 
-Use an empirical fluctuation test to test structural change in seasonality. The red lines indicate threshold of a change. 
-```{r}
-efp_har1 <- efp(seasonality ~ co + si, type = "OLS-MOSUM")
-plot(efp_har1)
-
-efp_har1 <- efp(seasonality ~ co + si, type = "OLS-CUSUM")
-plot(efp_har1)
-
-sctest(efp_har1)
-```
-
-Remove the seasonality.
-```{r}
-trend_rmstlsea <- originalts - seasonality
-```
-
-Check if any harmonic seasonality left after the seasonality is removed by stl:
+Empirical fluctuation test of change in seasonality
 
 ```{r}
-summary(lm(trend_rmstlsea ~ tl + co + si))
+p.Vt1 <-  efp(seasonality ~ co + co2 + co3 + si + si2 + si3, h = 0.15, type = "OLS-CUSUM")
+plot(p.Vt1) 
 ```
 
-Use the empirical fluctuation test to test structural change in trend. The red lines indicate threshold of a change. 
-
-```{r}
-efp_trend <- efp(trend_rmstlsea ~ tl, type = "OLS-MOSUM")
-plot(efp_trend)
-sctest(efp_trend)
-```
 
 #### 2. Regression on trend and harmonic terms at once: the BFAST Monitor method: 
 ```{r}
@@ -168,8 +171,8 @@ coef_sea <- function(ts1, whichcoef)
 The seasonality coefficient takes around 1 min to run. In case of saving some time, we can load the seasonality coefficeints.  
 
 ```{r}
-load("seacoefsi.Rdata")
-load("seacoefco.Rdata")
+load("Rdata/seacoefsi.Rdata")
+load("Rdata/seacoefco.Rdata")
 ```
 
 We could see a spatial pattern in the seasonality coefficient: the sine term
